@@ -70,34 +70,6 @@ def pageToRepr(pagePath):
 
     return text, reprText
 
-def correct_spelling(text):
-  # split the text into sentences
-  sentences = re.split(r'(?<=[^A-Z].[.?]) +(?=[A-Z])', text)
-
-  # create a spelling corrector
-  corrector = spellchecker.SpellChecker()
-
-  # iterate over the sentences and correct their spelling
-  corrected_sentences = []
-  for sentence in sentences:
-    # split the sentence into words
-    words = sentence.split()
-
-    # correct the spelling of each word
-    corrected_words = []
-    for word in words:
-      corrected_word = corrector.correction(word)
-      corrected_words.append(corrected_word)
-
-    # join the corrected words into a sentence
-    corrected_sentence = " ".join(corrected_words)
-    corrected_sentences.append(corrected_sentence)
-
-  # join the corrected sentences into a paragraph
-  corrected_text = "\n".join(corrected_sentences)
-
-  return corrected_text
-
 def makeArrayOfLines(reprText):
     out = reprText.split("\n")
     return out
