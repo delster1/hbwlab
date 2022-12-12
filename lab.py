@@ -1,9 +1,15 @@
+#imports 
 import pprint as pr
 from pdf2image import convert_from_path
-import pandas as pd
-from PIL import Image
+from PIL import Image, ImageDraw
+from spellchecker import SpellChecker
+spell = SpellChecker()
+
+#tesseract setup
 from pytesseract import pytesseract
 pathToTesseract = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+pytesseract.tesseract_cmd = pathToTesseract
+tessdata_dir_config = '--tessdata-dir "C:\\Program Files\\Tesseract-OCR\\tessdata"'
 
 
 def convertPdfToJpg(pdfPath): # duh
@@ -15,27 +21,32 @@ def convertPdfToJpg(pdfPath): # duh
         images[i].save('imgs\page'+ str(i) +'.jpg', 'JPEG')
         # Store Pdf with convert_from_path functionpy
 
+def convertPageToDataframe(imgPath):
+    img = Image.open(imgPath)
+    pytesseract.tesseract_cmd = pathToTesseract
+    
+    out = pytesseract.image_to_data(Image.open(imgPath) , output_type='data.frame',config=tessdata_dir_config)
+
+
+    return out
 
 def convertPageToData(imgPath): # duh
     img = Image.open(imgPath)
     pytesseract.tesseract_cmd = pathToTesseract
     
-    out = pytesseract.image_to_data(Image.open(imgPath) , output_type='data.frame')
+    out = pytesseract.image_to_data(Image.open(imgPath) , output_type='dict',config=tessdata_dir_config)
 
 
     return out
 
-def findBadConfidences(data,confidencePercent):
+def findBadConfidencesAndLocations(data,confidencePercent):
     out = {}
-    words = data["text"] # array of words
-    confidences = data["conf"] # array of confidences
-    for wordIndex, word in enumerate(words):
-        if confidences[wordIndex] <= confidencePercent and confidences[wordIndex] != -1 and confidences[wordIndex] != 0: # find confidences below a confidencePercent
-            wordConfidence = confidences[wordIndex]
 
-            out[word] = wordConfidence # add to dict
-            
-
+    for i in range(len(data["text"])):
+  # check if the confidence is low
+        if int(data["conf"][i]) < confidencePercent:
+            # output the word and its location
+            out[data["text"][i]] = data["left"][i], data["top"][i]
         
     return out
 
@@ -45,54 +56,95 @@ def find(s, el):
             return i
     return None
 
-def getBadWordData(badWordsToSearch, data, toFind):
+def getBadWordData(badWordsToSearch, data, toFind): 
     out = "not changed"
 
-    if type(badWordsToSearch) == dict: 
-
-        for badWord in badWordsToSearch:
-            if badWord == toFind:
-                print("\nfound:", toFind,"\n")
-
-                outIndex = find(data["text"],toFind)
-                out = data.loc[outIndex]
-                break
-    print("output: ", out,"\n")
-    
     return out
 
 def pageToRepr(pagePath):
+    pytesseract.tesseract_cmd = pathToTesseract
 
 
-    text = pytesseract.image_to_string(pagePath) # convert path to text
+    text = pytesseract.image_to_string(pagePath,config=tessdata_dir_config) # convert path to text
     reprText = repr(text) # duh
 
     return text, reprText
 
+def correct_spelling(text):
+  # split the text into sentences
+  sentences = re.split(r'(?<=[^A-Z].[.?]) +(?=[A-Z])', text)
+
+  # create a spelling corrector
+  corrector = spellchecker.SpellChecker()
+
+  # iterate over the sentences and correct their spelling
+  corrected_sentences = []
+  for sentence in sentences:
+    # split the sentence into words
+    words = sentence.split()
+
+    # correct the spelling of each word
+    corrected_words = []
+    for word in words:
+      corrected_word = corrector.correction(word)
+      corrected_words.append(corrected_word)
+
+    # join the corrected words into a sentence
+    corrected_sentence = " ".join(corrected_words)
+    corrected_sentences.append(corrected_sentence)
+
+  # join the corrected sentences into a paragraph
+  corrected_text = "\n".join(corrected_sentences)
+
+  return corrected_text
+
+def makeArrayOfLines(reprText):
+    out = reprText.split("\n")
+    return out
+
+def writeToFile(toWriteToFile, file):
+    with open("pgScan.txt","w",encoding="utf8") as f:
+        f.writelines(toWriteToFile)
+
+def drawWordLocations(badConfidencesDict, pgImage):
+    draw = ImageDraw.Draw(pgImage)
+
+    for o in badConfidencesDict.values():
+        
+        x=o[0]
+        y=o[1]
+        draw.ellipse((x-10, y-10, x+10, y+10), fill=(0, 255, 0, 100))
+    #     f.writelines(pgText[0])
+    pgImage.show()
+
 def main():
+        #TODO ADD CORRECT WORD DETECTION (detecting words that are already spelled correctly and probably do not need to be corrected)
+
     
-
     pdf = "test.pdf" #pdf to use
-    pagePath = r"imgs\page35.jpg" #page to parse
-
-    bestConfidence = 75
+    pagePath = r"imgs\page56.jpg" #page to parse
+    pgImage = Image.open(pagePath)
+    confidencePercent = 80
     # convertPdfTo(pdf)
-
+    print("confidence theshold: ", confidencePercent, "%\n")
     data = convertPageToData(pagePath) #turn page into data of confidences for words etc
     # pr.pprint(data)
-
-    badConfidencesDict = findBadConfidences(data, bestConfidence)
-    print(badConfidencesDict)
-    getBadWordData(badConfidencesDict, data, list(badConfidencesDict)[1])
+    
+    badConfidencesDict = findBadConfidencesAndLocations(data, confidencePercent)
+    pr.pprint(badConfidencesDict)
+    print("\nNumber of low confidence words: " + str(len(badConfidencesDict)))
+    # getBadWordData(badConfidencesDict, data, list(badConfidencesDict)[1])
 
     pgText = pageToRepr(pagePath)
 
     arrayBySentences = pgText[0].split(".")
+    arrayOfLines = makeArrayOfLines(pgText[1])
 
-    for sentence in arrayBySentences:
-        toSearch = list(badConfidencesDict)[1]
-        if toSearch in sentence:
-            print(sentence)
+    print(convertPageToDataframe(pagePath))
+
+    writeToFile(pgText[0], "pgScan.txt")
+    
+    drawWordLocations(badConfidencesDict, pgImage)
     
 
 
